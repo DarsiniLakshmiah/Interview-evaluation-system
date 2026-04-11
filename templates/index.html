@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview Coach</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ── Setup Screen ─────────────────────────────────────────────────────── -->
+<div id="setup-screen">
+    <div class="setup-card">
+        <div class="setup-icon">🎯</div>
+        <h1>AI Interview Coach</h1>
+        <p class="subtitle">Practice interviews with real-time body language analysis and AI-powered feedback.</p>
+
+        <div class="form-group">
+            <label>Job Position</label>
+            <input type="text" id="jobRole" placeholder="Type a role or pick one below...">
+            <div class="role-chips">
+                <button class="chip" onclick="setRole('AI Engineer')">AI Engineer</button>
+                <button class="chip" onclick="setRole('Software Engineer')">Software Engineer</button>
+                <button class="chip" onclick="setRole('Data Scientist')">Data Scientist</button>
+                <button class="chip" onclick="setRole('Product Manager')">Product Manager</button>
+                <button class="chip" onclick="setRole('Frontend Developer')">Frontend Dev</button>
+                <button class="chip" onclick="setRole('Backend Developer')">Backend Dev</button>
+                <button class="chip" onclick="setRole('DevOps Engineer')">DevOps</button>
+                <button class="chip" onclick="setRole('UX Designer')">UX Designer</button>
+            </div>
+        </div>
+
+        <div class="features">
+            <div class="feature"><span>🎤</span> Voice-to-text answers</div>
+            <div class="feature"><span>👁</span> Eye contact tracking</div>
+            <div class="feature"><span>😊</span> Emotion analysis</div>
+            <div class="feature"><span>📊</span> Performance report</div>
+        </div>
+
+        <button class="btn-primary" onclick="startInterview()">Start Interview</button>
+    </div>
+</div>
+
+<!-- ── Interview Screen ──────────────────────────────────────────────────── -->
+<div id="interview-screen">
+
+    <div id="top-bar">
+        <div id="role-title">Interview</div>
+        <div style="display:flex;align-items:center;gap:1rem">
+            <button id="new-interview-btn" onclick="restartInterview()" style="display:none">
+                ↩ New Interview
+            </button>
+            <div id="status-indicator">
+                <span id="status-dot">●</span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-content">
+
+        <!-- Left: video + live metrics -->
+        <div id="left-panel">
+
+            <div id="video-container">
+                <video id="webcam" autoplay muted playsinline></video>
+                <!-- canvas intentionally not drawn on; used only for frame grabs -->
+                <canvas id="face-canvas" style="display:none"></canvas>
+
+                <div id="video-overlay">
+                    <div id="face-status">
+                        <span id="face-indicator">⚪</span>
+                        <span id="face-label">Initializing camera...</span>
+                    </div>
+                </div>
+
+                <div id="recording-indicator">
+                    <span class="rec-dot">●</span> REC
+                    <span id="rec-timer">0:00</span>
+                </div>
+            </div>
+
+            <div id="metrics-panel">
+                <h3>📊 Live Analysis</h3>
+
+                <div class="metric-row">
+                    <div class="metric-label"><span>👁</span> Eye Contact</div>
+                    <div class="metric-bar-wrap">
+                        <div class="metric-bar" id="eye-bar"></div>
+                    </div>
+                    <div class="metric-value" id="eye-value">—</div>
+                </div>
+
+                <div class="metric-row">
+                    <div class="metric-label"><span>😊</span> Emotion</div>
+                    <div class="metric-text" id="emotion-display">—</div>
+                </div>
+
+                <div class="metric-row">
+                    <div class="metric-label"><span>📐</span> Head</div>
+                    <div class="metric-text" id="pose-display">—</div>
+                </div>
+
+                <div class="metric-row">
+                    <div class="metric-label"><span>🔊</span> Audio</div>
+                    <div id="speaking-bars">
+                        <div class="bar" id="bar1"></div>
+                        <div class="bar" id="bar2"></div>
+                        <div class="bar" id="bar3"></div>
+                        <div class="bar" id="bar4"></div>
+                        <div class="bar" id="bar5"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: chat + controls -->
+        <div id="right-panel">
+            <div id="messages"></div>
+
+            <div id="answer-controls">
+                <div id="transcription-preview"></div>
+                <div id="btn-row">
+                    <button id="record-btn" class="btn-record" onclick="toggleRecording()" disabled>
+                        🎤 Start Recording
+                    </button>
+                    <button id="submit-btn" class="btn-submit" onclick="submitAnswer()" disabled>
+                        Send Answer ➤
+                    </button>
+                </div>
+                <div id="hint-text">Waiting for question...</div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ── Report Modal ──────────────────────────────────────────────────────── -->
+<div id="report-modal">
+    <div id="report-card">
+        <h2>📋 Interview Report</h2>
+        <div id="report-content">Generating your report...</div>
+        <button class="btn-primary" onclick="closeReport()" style="margin-top:1.5rem">Close</button>
+    </div>
+</div>
+
+<!-- face-api.js from CDN (vladmandic maintained fork) -->
+<script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/dist/face-api.js"
+        onload="onFaceApiScriptLoaded()"></script>
+<script src="/static/script.js"></script>
+</body>
+</html>
