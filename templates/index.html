@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Interview Coach</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=4">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -14,28 +14,64 @@
     <div class="setup-card">
         <div class="setup-icon">🎯</div>
         <h1>AI Interview Coach</h1>
-        <p class="subtitle">Practice interviews with real-time body language analysis and AI-powered feedback.</p>
+        <p class="subtitle">Practice company-specific interviews with real-time body language analysis and AI-powered feedback.</p>
 
         <div class="form-group">
-            <label>Job Position</label>
+            <label>Company Name <span class="label-hint">(optional)</span></label>
+            <input type="text" id="companyName" placeholder="e.g. Google, Amazon, Meta..." oninput="syncCompanyChip(this.value)">
+            <div class="role-chips">
+                <button class="chip company-chip" onclick="setCompany('Google')">Google</button>
+                <button class="chip company-chip" onclick="setCompany('Amazon')">Amazon</button>
+                <button class="chip company-chip" onclick="setCompany('Microsoft')">Microsoft</button>
+                <button class="chip company-chip" onclick="setCompany('Meta')">Meta</button>
+                <button class="chip company-chip" onclick="setCompany('Apple')">Apple</button>
+                <button class="chip company-chip" onclick="setCompany('Netflix')">Netflix</button>
+                <button class="chip company-chip" onclick="setCompany('Stripe')">Stripe</button>
+                <button class="chip company-chip" onclick="setCompany('OpenAI')">OpenAI</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Job Role</label>
             <input type="text" id="jobRole" placeholder="Type a role or pick one below...">
             <div class="role-chips">
-                <button class="chip" onclick="setRole('AI Engineer')">AI Engineer</button>
-                <button class="chip" onclick="setRole('Software Engineer')">Software Engineer</button>
-                <button class="chip" onclick="setRole('Data Scientist')">Data Scientist</button>
-                <button class="chip" onclick="setRole('Product Manager')">Product Manager</button>
-                <button class="chip" onclick="setRole('Frontend Developer')">Frontend Dev</button>
-                <button class="chip" onclick="setRole('Backend Developer')">Backend Dev</button>
-                <button class="chip" onclick="setRole('DevOps Engineer')">DevOps</button>
-                <button class="chip" onclick="setRole('UX Designer')">UX Designer</button>
+                <button class="chip role-chip" onclick="setRole('AI Engineer')">AI Engineer</button>
+                <button class="chip role-chip" onclick="setRole('Software Engineer')">Software Engineer</button>
+                <button class="chip role-chip" onclick="setRole('Data Scientist')">Data Scientist</button>
+                <button class="chip role-chip" onclick="setRole('Product Manager')">Product Manager</button>
+                <button class="chip role-chip" onclick="setRole('Frontend Developer')">Frontend Dev</button>
+                <button class="chip role-chip" onclick="setRole('Backend Developer')">Backend Dev</button>
+                <button class="chip role-chip" onclick="setRole('DevOps Engineer')">DevOps</button>
+                <button class="chip role-chip" onclick="setRole('UX Designer')">UX Designer</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Interview Type</label>
+            <div class="interview-type-selector">
+                <button class="type-btn active" data-type="technical" onclick="setInterviewType('technical')">
+                    <span class="type-icon">💻</span>
+                    <span class="type-name">Technical</span>
+                    <span class="type-desc">Coding, system design, tech knowledge</span>
+                </button>
+                <button class="type-btn" data-type="behavioral" onclick="setInterviewType('behavioral')">
+                    <span class="type-icon">🤝</span>
+                    <span class="type-name">Behavioral</span>
+                    <span class="type-desc">STAR-format, culture fit, soft skills</span>
+                </button>
+                <button class="type-btn" data-type="case_study" onclick="setInterviewType('case_study')">
+                    <span class="type-icon">📊</span>
+                    <span class="type-name">Case Study</span>
+                    <span class="type-desc">Problem analysis, structured thinking</span>
+                </button>
             </div>
         </div>
 
         <div class="features">
+            <div class="feature"><span>🏢</span> Company-specific questions</div>
             <div class="feature"><span>🎤</span> Voice-to-text answers</div>
             <div class="feature"><span>👁</span> Eye contact tracking</div>
-            <div class="feature"><span>😊</span> Emotion analysis</div>
-            <div class="feature"><span>📊</span> Performance report</div>
+            <div class="feature"><span>📊</span> Detailed performance report</div>
         </div>
 
         <button class="btn-primary" onclick="startInterview()">Start Interview</button>
@@ -65,7 +101,6 @@
 
             <div id="video-container">
                 <video id="webcam" autoplay muted playsinline></video>
-                <!-- canvas intentionally not drawn on; used only for frame grabs -->
                 <canvas id="face-canvas" style="display:none"></canvas>
 
                 <div id="video-overlay">
@@ -145,9 +180,8 @@
     </div>
 </div>
 
-<!-- face-api.js from CDN (vladmandic maintained fork) -->
 <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/dist/face-api.js"
         onload="onFaceApiScriptLoaded()"></script>
-<script src="/static/script.js"></script>
+<script src="/static/script.js?v=4"></script>
 </body>
 </html>

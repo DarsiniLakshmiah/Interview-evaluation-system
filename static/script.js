@@ -3,6 +3,8 @@
 // ══════════════════════════════════════════════════════════════════════════
 let ws                  = null;
 let jobPosition         = '';
+let companyName         = '';
+let interviewType       = 'technical';   // 'technical' | 'behavioral' | 'case_study'
 let mediaStream         = null;
 let mediaRecorder       = null;
 let audioChunks         = [];
@@ -11,16 +13,14 @@ let recordingStart      = null;
 let recTimerInterval    = null;
 let speakingTimer       = null;
 
-let faceApiReady        = false;   // true once script tag fires onload
-let faceApiLoaded       = false;   // true once models finish loading
+let faceApiReady        = false;
+let faceApiLoaded       = false;
 let detectionInterval   = null;
 let currentMetrics      = { eye_contact: 0, emotion: 'neutral', emotion_key: 'neutral', head_ok: true };
-let frameMetrics        = [];      // accumulated during one recording session
+let frameMetrics        = [];
+let conversationHistory     = [];
+let answerMetricsSummaries  = [];
 
-let conversationHistory     = [];  // [{role, content}]
-let answerMetricsSummaries  = [];  // one summary object per submitted answer
-
-// face-api script fires this when the <script> tag finishes loading
 function onFaceApiScriptLoaded() {
     faceApiReady = true;
 }
@@ -28,16 +28,57 @@ function onFaceApiScriptLoaded() {
 // ══════════════════════════════════════════════════════════════════════════
 // SETUP
 // ══════════════════════════════════════════════════════════════════════════
+function setCompany(name) {
+    companyName = name;
+    document.getElementById('companyName').value = name;
+    document.querySelectorAll('.company-chip').forEach(c => {
+        const match = c.textContent.trim().toLowerCase() === name.toLowerCase();
+        c.classList.toggle('active', match);
+    });
+}
+
+// Called on every keystroke / paste in the company input field
+function syncCompanyChip(value) {
+    companyName = value.trim();
+    const lower = companyName.toLowerCase();
+    document.querySelectorAll('.company-chip').forEach(c => {
+        const match = c.textContent.trim().toLowerCase() === lower;
+        c.classList.toggle('active', match);
+    });
+}
+
+function setRole(role) {
+    jobPosition = role;
+    document.getElementById('jobRole').value = role;
+    document.querySelectorAll('.role-chip').forEach(c => {
+        c.classList.toggle('active', c.textContent.trim() === role ||
+            role.startsWith(c.textContent.trim().replace(' Dev', '')));
+    });
+}
+
+function setInterviewType(type) {
+    interviewType = type;
+    document.querySelectorAll('.type-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.type === type);
+    });
+}
+
 async function startInterview() {
     jobPosition = document.getElementById('jobRole').value.trim();
+    companyName = document.getElementById('companyName').value.trim();
+
     if (!jobPosition) { alert('Please enter a job role.'); return; }
 
     document.getElementById('setup-screen').style.display  = 'none';
     document.getElementById('interview-screen').style.display = 'flex';
-    document.getElementById('role-title').innerText = jobPosition + ' Interview';
+
+    const typeLabel = { technical: 'Technical', behavioral: 'Behavioral', case_study: 'Case Study' }[interviewType] || 'Technical';
+    const titleParts = [typeLabel, 'Interview —', jobPosition];
+    if (companyName) titleParts.push(`@ ${companyName}`);
+    document.getElementById('role-title').innerText = titleParts.join(' ');
 
     await initCamera();
-    initFaceApi();      // fire-and-forget; degrades gracefully if CDN unavailable
+    initFaceApi();
     connectWebSocket();
 }
 
@@ -58,7 +99,6 @@ async function initCamera() {
 
 // ── Face-api.js ────────────────────────────────────────────────────────────
 async function initFaceApi() {
-    // Wait up to 8 s for the CDN script to finish parsing
     for (let i = 0; i < 80; i++) {
         if (faceApiReady && typeof faceapi !== 'undefined') break;
         await sleep(100);
@@ -86,7 +126,7 @@ async function initFaceApi() {
     }
 }
 
-// ── Detection loop (runs every 500 ms) ────────────────────────────────────
+// ── Detection loop ────────────────────────────────────────────────────────
 function startDetectionLoop() {
     const video = document.getElementById('webcam');
 
@@ -111,13 +151,11 @@ function startDetectionLoop() {
             const box  = det.detection.box;
             const expr = det.expressions;
 
-            // ── Eye-contact: how centered is the nose tip over the face box ──
-            const noseTipX   = lm.getNose()[3].x;
+            const noseTipX    = lm.getNose()[3].x;
             const faceCenterX = box.x + box.width / 2;
-            const deviation  = Math.abs(noseTipX - faceCenterX) / (box.width + 1e-6);
-            const eyeContact = Math.max(0, Math.min(100, Math.round((1 - deviation * 3) * 100)));
+            const deviation   = Math.abs(noseTipX - faceCenterX) / (box.width + 1e-6);
+            const eyeContact  = Math.max(0, Math.min(100, Math.round((1 - deviation * 3) * 100)));
 
-            // ── Head pose: vertical ratio of nose-to-eyes vs face height ──
             const leftEye  = lm.getLeftEye();
             const rightEye = lm.getRightEye();
             const eyeMidY  = (leftEye[0].y + rightEye[3].y) / 2;
@@ -125,26 +163,25 @@ function startDetectionLoop() {
             const vRatio   = (noseTipY - eyeMidY) / (box.height + 1e-6);
             const headOk   = vRatio > 0.15 && vRatio < 0.48;
 
-            // ── Dominant expression ──
             const topExpr = Object.entries(expr).sort(([, a], [, b]) => b - a)[0];
             const emotionMap = {
-                happy:     { label: '😊 Confident',    color: '#10b981' },
-                neutral:   { label: '😐 Neutral',      color: '#94a3b8' },
-                surprised: { label: '😮 Surprised',    color: '#f59e0b' },
-                sad:       { label: '😔 Nervous',      color: '#f87171' },
-                fearful:   { label: '😰 Anxious',      color: '#f87171' },
-                disgusted: { label: '😒 Uncomfortable',color: '#f59e0b' },
-                angry:     { label: '😠 Stressed',     color: '#f87171' },
+                happy:     { label: '😊 Confident',     color: '#10b981' },
+                neutral:   { label: '😐 Neutral',       color: '#94a3b8' },
+                surprised: { label: '😮 Surprised',     color: '#f59e0b' },
+                sad:       { label: '😔 Nervous',       color: '#f87171' },
+                fearful:   { label: '😰 Anxious',       color: '#f87171' },
+                disgusted: { label: '😒 Uncomfortable', color: '#f59e0b' },
+                angry:     { label: '😠 Stressed',      color: '#f87171' },
             };
             const emoInfo = emotionMap[topExpr[0]] || { label: topExpr[0], color: '#94a3b8' };
 
             const metrics = {
-                face:         true,
-                eye_contact:  eyeContact,
-                head_ok:      headOk,
-                head:         headOk ? '✓ Straight' : '⚠ Turned',
-                emotion:      emoInfo.label,
-                emotion_key:  topExpr[0],
+                face:          true,
+                eye_contact:   eyeContact,
+                head_ok:       headOk,
+                head:          headOk ? '✓ Straight' : '⚠ Turned',
+                emotion:       emoInfo.label,
+                emotion_key:   topExpr[0],
                 emotion_color: emoInfo.color,
             };
 
@@ -153,7 +190,7 @@ function startDetectionLoop() {
 
             if (isRecording) frameMetrics.push({ ...metrics });
 
-        } catch (_) { /* silent — individual frame errors are OK */ }
+        } catch (_) { /* silent */ }
     }, 500);
 }
 
@@ -162,7 +199,12 @@ function startDetectionLoop() {
 // ══════════════════════════════════════════════════════════════════════════
 function connectWebSocket() {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${window.location.host}/ws/interview?pos=${encodeURIComponent(jobPosition)}`);
+    const params = new URLSearchParams({
+        pos:            jobPosition,
+        company:        companyName,
+        interview_type: interviewType,
+    });
+    ws = new WebSocket(`${proto}://${window.location.host}/ws/interview?${params}`);
 
     ws.onopen  = () => setStatus('green', 'Live');
 
@@ -234,7 +276,6 @@ function startRecording() {
     isRecording    = true;
     recordingStart = Date.now();
 
-    // UI
     document.getElementById('record-btn').innerHTML = '⏹ Stop Recording';
     document.getElementById('record-btn').classList.add('recording');
     document.getElementById('recording-indicator').style.display = 'flex';
@@ -269,10 +310,10 @@ async function processAudio() {
     }
 
     try {
-        const mime     = supportedMime();
-        const ext      = mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : 'webm';
-        const blob     = new Blob(audioChunks, { type: mime });
-        const form     = new FormData();
+        const mime = supportedMime();
+        const ext  = mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : 'webm';
+        const blob = new Blob(audioChunks, { type: mime });
+        const form = new FormData();
         form.append('audio', blob, `recording.${ext}`);
 
         document.getElementById('transcription-preview').innerText = '⏳ Transcribing...';
@@ -303,7 +344,6 @@ function submitAnswer() {
     const text = document.getElementById('submit-btn').dataset.text;
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-    // Build per-answer metrics summary
     let metricsPrefix = '';
     if (faceApiLoaded && frameMetrics.length > 0) {
         const avgEye = Math.round(
@@ -323,19 +363,17 @@ function submitAnswer() {
         metricsPrefix = `[METRICS: Eye Contact: ${avgEye}% | Emotion: ${domEmotion} | Head: ${headLabel}]\n`;
     }
 
-    // Show user bubble (text only, without metrics prefix)
     addMessage('You', text);
     conversationHistory.push({ role: 'Candidate', content: text });
 
     ws.send(metricsPrefix + text);
 
-    // Reset controls
     document.getElementById('transcription-preview').innerText = '';
     document.getElementById('submit-btn').disabled     = true;
     document.getElementById('submit-btn').dataset.text = '';
     const rb = document.getElementById('record-btn');
-    rb.disabled   = true;
-    rb.innerHTML  = '🎤 Start Recording';
+    rb.disabled  = true;
+    rb.innerHTML = '🎤 Start Recording';
     document.getElementById('hint-text').innerText = 'Waiting for response...';
     audioChunks = [];
 }
@@ -352,9 +390,11 @@ async function generateReport() {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
-                conversation:  conversationHistory,
-                metrics:       answerMetricsSummaries,
-                job_position:  jobPosition,
+                conversation:   conversationHistory,
+                metrics:        answerMetricsSummaries,
+                job_position:   jobPosition,
+                company:        companyName,
+                interview_type: interviewType,
             }),
         });
         const report = await res.json();
@@ -381,44 +421,85 @@ function renderReport(r) {
                 </div>`;
     };
 
-    const li = (arr) =>
-        (arr || []).map(s => `<li>${s}</li>`).join('');
+    const scoreCard = (label, score, reason, extra) => `
+        <div class="score-item">
+            <div class="score-label">${label}</div>
+            <div class="score-num">${score ?? '—'}/10</div>
+            ${bar(score)}
+            ${reason ? `<div class="score-reason">${reason}</div>` : ''}
+            ${extra || ''}
+        </div>`;
+
+    const li = (arr, cls) =>
+        (arr || []).map(s => `<li class="${cls}">${s}</li>`).join('');
+
+    const companyLine = companyName ? ` <span class="report-company">@ ${companyName}</span>` : '';
+    const typeLabel   = { technical: '💻 Technical', behavioral: '🤝 Behavioral', case_study: '📊 Case Study' }[interviewType] || interviewType;
+
+    // Filler word pills
+    const fillerPills = (r.filler_words || []).length
+        ? (r.filler_words).map(w => `<span class="filler-pill">${w}</span>`).join('')
+        : '<span class="filler-pill none">None detected</span>';
+
+    // Grammar observations
+    const grammarRows = (r.grammar_observations || []).length
+        ? (r.grammar_observations).map(g => `<li class="grammar-item">${g}</li>`).join('')
+        : '<li class="grammar-item none">No major issues observed</li>';
+
+    // Fluency tips
+    const fluencyTips = (r.fluency_tips || []).map(t => `<li class="improvement-item">${t}</li>`).join('');
+
+    // Extra filler info inside the fluency score card
+    const fillerExtra = `<div class="filler-row"><span class="filler-label">Filler words:</span>${fillerPills}</div>`;
 
     document.getElementById('report-content').innerHTML = `
+        <div class="report-meta">${typeLabel} Interview — ${jobPosition}${companyLine}</div>
+
         <div class="report-recommendation" style="color:${recColor}">${r.recommendation || '—'}</div>
+        ${r.recommendation_reason ? `<p class="report-rec-reason" style="color:${recColor}">${r.recommendation_reason}</p>` : ''}
         <p class="report-summary">${r.summary || ''}</p>
 
         <div class="scores-grid">
-            <div class="score-item">
-                <div class="score-label">Overall</div>
-                <div class="score-num">${r.overall_score ?? '—'}/10</div>
-                ${bar(r.overall_score)}
+            ${scoreCard('Overall',        r.overall_score,        r.overall_score_reason)}
+            ${scoreCard('Technical',      r.technical_score,      r.technical_score_reason)}
+            ${scoreCard('Communication',  r.communication_score,  r.communication_score_reason)}
+            ${scoreCard('Confidence',     r.confidence_score,     r.confidence_score_reason)}
+        </div>
+
+        <div class="fluency-section">
+            <div class="fluency-header">
+                <div>
+                    <h4>🗣 English Fluency</h4>
+                    <p class="fluency-subheading">Based on your raw, verbatim speech patterns</p>
+                </div>
+                <div class="fluency-score-badge ${r.english_fluency_score >= 7 ? 'good' : r.english_fluency_score >= 5 ? 'fair' : 'weak'}">
+                    ${r.english_fluency_score ?? '—'}/10
+                </div>
             </div>
-            <div class="score-item">
-                <div class="score-label">Technical</div>
-                <div class="score-num">${r.technical_score ?? '—'}/10</div>
-                ${bar(r.technical_score)}
-            </div>
-            <div class="score-item">
-                <div class="score-label">Communication</div>
-                <div class="score-num">${r.communication_score ?? '—'}/10</div>
-                ${bar(r.communication_score)}
-            </div>
-            <div class="score-item">
-                <div class="score-label">Confidence</div>
-                <div class="score-num">${r.confidence_score ?? '—'}/10</div>
-                ${bar(r.confidence_score)}
+            <p class="fluency-reason">${r.english_fluency_reason || ''}</p>
+
+            ${fillerExtra}
+
+            <div class="fluency-columns">
+                <div>
+                    <h5>Grammar Observations</h5>
+                    <ul class="report-list">${grammarRows}</ul>
+                </div>
+                <div>
+                    <h5>Tips to Improve</h5>
+                    <ul class="report-list">${fluencyTips}</ul>
+                </div>
             </div>
         </div>
 
         <div class="report-columns">
             <div>
                 <h4>💪 Strengths</h4>
-                <ul class="report-list strengths">${li(r.strengths)}</ul>
+                <ul class="report-list">${li(r.strengths, 'strength-item')}</ul>
             </div>
             <div>
                 <h4>🎯 Areas to Improve</h4>
-                <ul class="report-list improvements">${li(r.improvements)}</ul>
+                <ul class="report-list">${li(r.improvements, 'improvement-item')}</ul>
             </div>
         </div>
     `;
@@ -431,26 +512,71 @@ function closeReport() {
 // ══════════════════════════════════════════════════════════════════════════
 // UI HELPERS
 // ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse evaluator content for POSITIVE: / NEEDS WORK: sentiment markers.
+ * Returns { sentiment: 'positive'|'negative'|'neutral', text: string }
+ */
+function parseEvaluatorContent(content) {
+    const trimmed = content.trim();
+
+    if (trimmed.startsWith('POSITIVE:')) {
+        return { sentiment: 'positive', text: trimmed.slice('POSITIVE:'.length).trim() };
+    }
+    if (trimmed.startsWith('NEEDS WORK:')) {
+        return { sentiment: 'negative', text: trimmed.slice('NEEDS WORK:'.length).trim() };
+    }
+    // Fallback: scan first line
+    const firstLine = trimmed.split('\n')[0].toUpperCase();
+    if (firstLine.includes('POSITIVE')) {
+        return { sentiment: 'positive', text: trimmed };
+    }
+    if (firstLine.includes('NEEDS WORK') || firstLine.includes('NEGATIVE') || firstLine.includes('IMPROVE')) {
+        return { sentiment: 'negative', text: trimmed };
+    }
+    return { sentiment: 'neutral', text: trimmed };
+}
+
 function addMessage(source, content) {
-    const div   = document.getElementById('messages');
+    const div    = document.getElementById('messages');
     const bubble = document.createElement('div');
 
     let type = 'interviewer';
     if (source === 'You' || source === 'Candidate') type = 'user';
     else if (source === 'Evaluator') type = 'evaluator';
 
-    bubble.className = `message ${type}`;
+    if (type === 'evaluator') {
+        const { sentiment, text } = parseEvaluatorContent(content);
+        bubble.className = `message evaluator ${sentiment}`;
 
-    if (type !== 'user') {
-        const name = document.createElement('div');
-        name.className  = 'sender-name';
-        name.innerText  = source;
-        bubble.appendChild(name);
+        const badge = document.createElement('div');
+        badge.className = 'eval-badge';
+        if (sentiment === 'positive') {
+            badge.innerHTML = '<span class="eval-sentiment positive-badge">✓ Positive Feedback</span>';
+        } else if (sentiment === 'negative') {
+            badge.innerHTML = '<span class="eval-sentiment negative-badge">✗ Needs Improvement</span>';
+        } else {
+            badge.innerHTML = '<span class="eval-sentiment neutral-badge">Evaluator</span>';
+        }
+        bubble.appendChild(badge);
+
+        const textEl = document.createElement('div');
+        textEl.innerText = text;
+        bubble.appendChild(textEl);
+    } else {
+        bubble.className = `message ${type}`;
+
+        if (type !== 'user') {
+            const name = document.createElement('div');
+            name.className = 'sender-name';
+            name.innerText = source;
+            bubble.appendChild(name);
+        }
+
+        const text = document.createElement('div');
+        text.innerText = content;
+        bubble.appendChild(text);
     }
-
-    const text = document.createElement('div');
-    text.innerText = content;
-    bubble.appendChild(text);
 
     div.appendChild(bubble);
     div.scrollTop = div.scrollHeight;
@@ -478,18 +604,17 @@ function setFaceStatus(color, label) {
 }
 
 function setMetrics({ eye_contact, emotion, emotion_color, head, head_ok }) {
-    // Eye contact bar
     if (eye_contact !== null && eye_contact !== undefined) {
         const pct   = eye_contact;
         const color = pct > 60 ? '#10b981' : pct > 30 ? '#f59e0b' : '#ef4444';
-        document.getElementById('eye-bar').style.width       = pct + '%';
-        document.getElementById('eye-bar').style.background  = color;
-        document.getElementById('eye-value').innerText       = pct + '%';
+        document.getElementById('eye-bar').style.width      = pct + '%';
+        document.getElementById('eye-bar').style.background = color;
+        document.getElementById('eye-value').innerText      = pct + '%';
     }
     if (emotion) {
         const el = document.getElementById('emotion-display');
-        el.innerText    = emotion;
-        el.style.color  = emotion_color || 'var(--text-muted)';
+        el.innerText   = emotion;
+        el.style.color = emotion_color || 'var(--text-muted)';
     }
     if (head) {
         const el = document.getElementById('pose-display');
@@ -499,9 +624,9 @@ function setMetrics({ eye_contact, emotion, emotion_color, head, head_ok }) {
 }
 
 function tickTimer() {
-    const s    = Math.floor((Date.now() - recordingStart) / 1000);
-    const m    = Math.floor(s / 60);
-    const sec  = s % 60;
+    const s   = Math.floor((Date.now() - recordingStart) / 1000);
+    const m   = Math.floor(s / 60);
+    const sec = s % 60;
     document.getElementById('rec-timer').innerText = `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
@@ -525,33 +650,23 @@ function supportedMime() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Role quick-select ──────────────────────────────────────────────────────
-function setRole(role) {
-    document.getElementById('jobRole').value = role;
-    document.querySelectorAll('.chip').forEach(c => {
-        c.classList.toggle('active', c.textContent.trim() === role ||
-            role.startsWith(c.textContent.trim().replace(' Dev', '')));
-    });
-}
-
-// ── Restart / New Interview ────────────────────────────────────────────────
+// ── Restart ────────────────────────────────────────────────────────────────
 function restartInterview() {
-    // Stop any active streams
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (detectionInterval) { clearInterval(detectionInterval); detectionInterval = null; }
     if (ws && ws.readyState === WebSocket.OPEN) ws.close();
 
-    // Reset state
     faceApiLoaded = false; faceApiReady = false;
     conversationHistory = []; answerMetricsSummaries = []; frameMetrics = []; audioChunks = [];
-    isRecording = false;
+    isRecording = false; jobPosition = ''; companyName = ''; interviewType = 'technical';
 
-    // Reset UI
     document.getElementById('messages').innerHTML = '';
     document.getElementById('transcription-preview').innerText = '';
     document.getElementById('new-interview-btn').style.display = 'none';
     document.getElementById('interview-screen').style.display = 'none';
     document.getElementById('setup-screen').style.display = 'flex';
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === 'technical'));
     document.getElementById('jobRole').value = '';
+    document.getElementById('companyName').value = '';
 }
